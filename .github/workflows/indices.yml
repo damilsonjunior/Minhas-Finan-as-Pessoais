@@ -1,0 +1,39 @@
+name: Atualizar índices (CDI, IPCA, Ibovespa)
+
+on:
+  schedule:
+    - cron: '17 11 * * *'   # 08:17 em Brasília: pega o CDI do dia útil anterior
+    - cron: '47 22 * * *'   # 19:47 em Brasília: pega o fechamento do Ibovespa do dia
+  workflow_dispatch: {}     # botão "Run workflow" para rodar na hora
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: indices
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Buscar índices e atualizar o index.html
+        run: python3 scripts/atualizar_indices.py index.html
+      - name: Salvar no repositório (só se mudou)
+        run: |
+          if git diff --quiet; then echo "Nada mudou."; exit 0; fi
+          git config user.name "atualizador-de-indices"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Índices atualizados em $(TZ=America/Sao_Paulo date '+%d/%m/%Y %H:%M')"
+          git push
+      - name: Pedir nova publicação do site (GitHub Pages)
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" || echo "O Pages publica sozinho a partir do commit."
